@@ -1,8 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCloudBaseDb, isCloudBaseConfigured } from "@/lib/db/cloudbase";
+import {
+  getCloudBaseRestBase,
+  getCloudBaseHeaders,
+  isCloudBaseConfigured,
+} from "@/lib/db/cloudbase";
 
 /**
  * 公共画廊接口（服务端中转，避开浏览器直连 CloudBase 的域名白名单问题）
+ *
+ * 底层走 CloudBase PG 模式的 PostgREST 端点：
+ *   GET  https://{envId}.api.tcloudbasegateway.com/v1/rdb/rest/declarations?select=*&order=created_at.desc&limit=N
+ *   POST https://{envId}.api.tcloudbasegateway.com/v1/rdb/rest/declarations
+ * 鉴权：Authorization: Bearer <Publishable Key>（anon 角色，受 RLS 约束）
  *
  * GET  /api/gallery?limit=60  → 返回 { configured, items }
  *      configured=false 表示服务端还没配 CloudBase 环境变量，前端显示「还没开放」
@@ -14,41 +23,34 @@ import { getCloudBaseDb, isCloudBaseConfigured } from "@/lib/db/cloudbase";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const COLLECTION = "declarations";
-let _ensured = false;
-
-/** 集合不存在时尝试创建一次（忽略「已存在」等报错） */
-async function ensureCollection(db: any) {
-  if (_ensured) return;
-  try {
-    await db.createCollection(COLLECTION);
-  } catch {
-    // 已存在 / 无权限创建都忽略，写入时若仍失败会走外层 catch
-  }
-  _ensured = true;
-}
+const TABLE = "declarations";
 
 export async function GET(req: NextRequest) {
   if (!isCloudBaseConfigured) {
     return NextResponse.json({ configured: false, items: [] });
   }
   try {
-    const db = await getCloudBaseDb();
     const raw = Number(req.nextUrl.searchParams.get("limit") ?? "60");
     const limit = Math.min(Math.max(Number.isFinite(raw) ? raw : 60, 1), 100);
 
-    const res = await db
-      .collection(COLLECTION)
-      .orderBy("createdAt", "desc")
-      .limit(limit)
-      .get();
+    const base = getCloudBaseRestBase();
+    const headers = getCloudBaseHeaders();
+    const url = `${base}/${TABLE}?select=*&order=created_at.desc&limit=${limit}`;
 
-    const items = (res.data ?? []).map((d: any) => ({
-      id: d._id,
+    const res = await fetch(url, { headers, cache: "no-store" });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      console.error("[gallery] GET non-ok:", res.status, detail);
+      return NextResponse.json({ configured: true, items: [] });
+    }
+
+    const rows = (await res.json()) as Array<Record<string, any>>;
+    const items = (Array.isArray(rows) ? rows : []).map((d) => ({
+      id: String(d.id ?? ""),
       declaration_text: d.declaration_text ?? "",
       card_name: d.card_name ?? "",
       card_style: d.card_style ?? "",
-      created_at: d.createdAt ?? new Date().toISOString(),
+      created_at: d.created_at ?? new Date().toISOString(),
     }));
 
     return NextResponse.json({ configured: true, items });
@@ -75,14 +77,25 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const db = await getCloudBaseDb();
-    await ensureCollection(db);
-    await db.collection(COLLECTION).add({
-      declaration_text: text,
-      card_name: name,
-      card_style: style,
-      createdAt: new Date().toISOString(),
+    const base = getCloudBaseRestBase();
+    const headers = getCloudBaseHeaders();
+    const res = await fetch(`${base}/${TABLE}`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        declaration_text: text,
+        card_name: name,
+        card_style: style,
+        created_at: new Date().toISOString(),
+      }),
+      cache: "no-store",
     });
+
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      console.error("[gallery] POST failed:", res.status, detail);
+      return NextResponse.json({ error: "save failed" }, { status: 500 });
+    }
 
     return NextResponse.json({ ok: true });
   } catch (e) {
