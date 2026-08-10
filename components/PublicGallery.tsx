@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { DeclarationCard, type CardStyle } from "./DeclarationCard";
 import {
-  isRemoteGalleryEnabled,
   listDeclarationsRemote,
   type RemoteDeclaration,
 } from "@/lib/db/declarations";
@@ -22,18 +21,17 @@ import {
 
 export function PublicGallery() {
   const [items, setItems] = useState<RemoteDeclaration[]>([]);
+  const [configured, setConfigured] = useState(true);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!isRemoteGalleryEnabled) {
-      setLoading(false);
-      return;
-    }
-
     let active = true;
     listDeclarationsRemote()
-      .then((data) => {
-        if (active) setItems(data);
+      .then(({ configured, items }) => {
+        if (active) {
+          setConfigured(configured);
+          setItems(items);
+        }
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -44,7 +42,7 @@ export function PublicGallery() {
     };
   }, []);
 
-  if (!isRemoteGalleryEnabled) {
+  if (!configured) {
     return (
       <div className="surface-card p-10 sm:p-14 text-center">
         <div className="text-4xl mb-4">🌍</div>

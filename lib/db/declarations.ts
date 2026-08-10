@@ -1,20 +1,20 @@
-import { supabase } from "./supabase";
-
 /**
  * 公共宣言画廊（云端版）
  *
- * 数据直接走 Supabase 匿名客户端（anon key 本身就是公开前缀 NEXT_PUBLIC_），
- * 不绕我们自己的后端——少一跳、少一份密钥管理，也是 Supabase 的标准用法。
- * （lib/db/supabase.ts 的注释里已备好建表 SQL + RLS 策略。）
+ * 数据走我们自己的 /api/gallery 接口（服务端再中转 CloudBase 数据库），
+ * 不直接在浏览器里连数据库——这样 EdgeOne 预览域名随便变都不影响画廊，
+ * 也不需要 CloudBase 的「安全域名白名单」或匿名登录。
  *
- * 隐私边界（关键）：declarations 表只存 4 个公开字段
+ * 隐私边界（关键）：只存 4 个公开字段
  *   declaration_text / card_name / card_style / created_at
  * 不存任何用户身份（无 user_id、无邮箱、无 IP）。
- * 配合 RLS：select 对所有人开放，insert 对匿名开放但 only 这 4 列。
  *
- * 降级：未配置 Supabase（supabase === null）时，
- *   saveDeclarationRemote 静默返回，listDeclarationsRemote 返回空数组，
- *   画廊页自动退回「仅本地」，主流程永不断。
+ * 降级：
+ *   - 服务端没配 CloudBase → /api/gallery 返回 configured:false，前端显示「还没开放」
+ *   - 读取/写入失败 → 前端退回空态，主流程永不断
+ *
+ * 注意：本文件运行在浏览器（被客户端组件 import），所以只做 fetch，
+ * 真正的数据库操作在 app/api/gallery/route.ts 里。
  */
 
 export type RemoteDeclaration = {
@@ -22,12 +22,15 @@ export type RemoteDeclaration = {
   declaration_text: string;
   card_name: string;
   card_style: string;
-  /** Supabase 返回的 ISO 时间戳字符串 */
+  /** ISO 时间戳字符串 */
   created_at: string;
 };
 
-/** 是否已接入云端画廊（决定是否显示公共区） */
-export const isRemoteGalleryEnabled = supabase !== null;
+/**
+ * 是否启用云端画廊。接口本身始终存在，这里恒为 true；
+ * 是否「真的连上数据库」由服务端通过 configured 标志告诉前端。
+ */
+export const isRemoteGalleryEnabled = true;
 
 /**
  * 写入一条公共宣言（匿名，不含身份）
@@ -38,37 +41,41 @@ export async function saveDeclarationRemote(input: {
   card_name: string;
   card_style: string;
 }): Promise<void> {
-  if (!supabase) return; // 未配置静默降级
-
-  const { error } = await supabase.from("declarations").insert({
-    declaration_text: input.declaration_text.trim(),
-    card_name: input.card_name.trim(),
-    card_style: input.card_style,
+  const res = await fetch("/api/gallery", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      declaration_text: input.declaration_text.trim(),
+      card_name: input.card_name.trim(),
+      card_style: input.card_style,
+    }),
   });
-
-  if (error) {
-    console.error("[declarations] insert failed:", error.message);
-    throw error;
+  if (!res.ok) {
+    throw new Error("save failed");
   }
 }
 
 /**
  * 读取公共画廊最新 N 条（公开只读）
- * 失败时返回空数组，绝不阻断页面渲染
+ * 返回 { configured, items }：configured=false 表示服务端还没配数据库。
+ * 失败时返回 { configured: true, items: [] }，绝不阻断页面渲染。
  */
-export async function listDeclarationsRemote(limit = 60): Promise<RemoteDeclaration[]> {
-  if (!supabase) return [];
-
-  const { data, error } = await supabase
-    .from("declarations")
-    .select("id, declaration_text, card_name, card_style, created_at")
-    .order("created_at", { ascending: false })
-    .limit(limit);
-
-  if (error) {
-    console.error("[declarations] list failed:", error.message);
-    return [];
+export async function listDeclarationsRemote(
+  limit = 60
+): Promise<{ configured: boolean; items: RemoteDeclaration[] }> {
+  try {
+    const res = await fetch(`/api/gallery?limit=${limit}`, { method: "GET" });
+    if (!res.ok) return { configured: true, items: [] };
+    const data = (await res.json()) as {
+      configured?: boolean;
+      items?: RemoteDeclaration[];
+    };
+    return {
+      configured: Boolean(data.configured),
+      items: (data.items ?? []) as RemoteDeclaration[],
+    };
+  } catch (e) {
+    console.error("[declarations] list failed:", e);
+    return { configured: true, items: [] };
   }
-
-  return (data ?? []) as RemoteDeclaration[];
 }
