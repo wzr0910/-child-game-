@@ -1,6 +1,13 @@
 {
-  "$comment": "国内版 EdgeOne Pages 项目配置。把框架预设改成 Other 后，本文件生效。node-functions/ 目录会被平台自动识别为 Node.js 函数（运行时 v20.x），文件路径 node-functions/api/gallery.js 自动对应 URL /api/gallery。",
+  "$comment": "EdgeOne Makers（国内版 console.cloud.tencent.com/edgeone/makers）项目级配置。Makers 同时支持静态前端 + /cloud-functions/ 下的 Cloud Functions。本项目的 Next.js 页面作为前端输出到 .next，Cloud Functions 提供 /api/gallery 兜底读取 CloudBase 数据。框架预设=Other，本文件生效。",
   "buildCommand": "npm run build",
-  "installCommand": "npm install",
-  "outputDirectory": "./.next"
+  "outputDirectory": "./.next",
+  "framework": "nextjs",
+  "cloudFunctions": {
+    "nodejs": {
+      "includeFiles": [],
+      "maxDuration": 30
+    },
+    "mainlandRegions": ["ap-shanghai"]
+  }
 }

@@ -1,7 +1,7 @@
 // Edge Function 逻辑冒烟 —— 用 Node 22+ 直接 import
 // 由于函数 export default 接收 (context) 返回 Response，我们用 mock context 喂进去。
 
-import onRequest from "../node-functions/api/gallery.js";
+import onRequest from "../cloud-functions/api/gallery.js";
 
 const env = {
   CLOUDBASE_ENV_ID: "child-game-d4gxbdz4zce7a5c3b",
