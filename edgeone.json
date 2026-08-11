@@ -1,13 +1,6 @@
 {
-  "$comment": "EdgeOne Pages 项目级配置。把 /api/gallery 显式重写到 Edge Function 文件，免去对平台默认自动识别的依赖。",
+  "$comment": "国内版 EdgeOne Pages 项目配置。把框架预设改成 Other 后，本文件生效。node-functions/ 目录会被平台自动识别为 Node.js 函数（运行时 v20.x），文件路径 node-functions/api/gallery.js 自动对应 URL /api/gallery。",
   "buildCommand": "npm run build",
   "installCommand": "npm install",
-  "outputDirectory": "./.next",
-  "nodeVersion": "22.11.0",
-  "rewrites": [
-    {
-      "source": "/api/gallery",
-      "destination": "/functions/api/gallery.js"
-    }
-  ]
+  "outputDirectory": "./.next"
 }
