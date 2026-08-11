@@ -1,0 +1,13 @@
+{
+  "$comment": "EdgeOne Pages 项目级配置。把 /api/gallery 显式重写到 Edge Function 文件，免去对平台默认自动识别的依赖。",
+  "buildCommand": "npm run build",
+  "installCommand": "npm install",
+  "outputDirectory": "./.next",
+  "nodeVersion": "22.11.0",
+  "rewrites": [
+    {
+      "source": "/api/gallery",
+      "destination": "/functions/api/gallery.js"
+    }
+  ]
+}
